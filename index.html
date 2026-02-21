@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bússola do Gestor · Instituto Salto</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet" />
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: linear-gradient(160deg, #faf8f5 0%, #f0ede8 100%); min-height: 100vh; }
+    #root { min-height: 100vh; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.4s ease both; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef } = React;
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIG — altere aqui, nunca dentro do código
+// ═══════════════════════════════════════════════════════════════
+const CONFIG = {
+  APP_VERSION: "1.0.0",
+  CICLO_PROJETO: "2026-T1",
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyLjxEWsvEBonEgZaJ6m3q1oPGEWDSXXLA4_PAnNJnBTFm8lba_RBv82w5gJggb-CdM3A/exec",
+  APP_TOKEN: "salto-bussola-2026",
+  BASE_COMP_URL: "https://salto.org.br/bussola/competencias/{COMP_ID}",
+  BASE_PORTFOLIO_URL: "https://salto.org.br/portfolio?email={EMAIL}",
+  SHOW_IMLE_BANDS: false,
+  IMLE_BANDS: [
+    { max: 1.5, label: "Estruturação",        desc: "Você está nas etapas iniciais de desenvolvimento nessas competências." },
+    { max: 2.5, label: "Consolidação",         desc: "Você demonstra avanços consistentes e tem espaço claro para crescer." },
+    { max: 3.2, label: "Liderança avançada",   desc: "Você já pratica essas competências com autonomia e consistência." },
+    { max: 4.0, label: "Referência sistêmica", desc: "Você está num patamar de referência e tem muito a contribuir com outros gestores." },
+  ],
+};
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+const normalizeEmail    = (e) => e.trim().toLowerCase();
+const compIdToSlug      = (id) => id.replace(".", "-");
+const buildCompLink     = (id)    => CONFIG.BASE_COMP_URL.replace("{COMP_ID}", compIdToSlug(id));
+const buildPortfolioLink = (email) => CONFIG.BASE_PORTFOLIO_URL.replace("{EMAIL}", encodeURIComponent(normalizeEmail(email)));
+
+function getImleInterpretation(imle) {
+  for (const band of CONFIG.IMLE_BANDS) {
+    if (imle <= band.max) return band;
+  }
+  return CONFIG.IMLE_BANDS[CONFIG.IMLE_BANDS.length - 1];
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function generateSubmissionId() {
+  return "sub_" + Date.now() + "_" + Math.random().toString(36).slice(2, 9);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMPETÊNCIAS P1, P2, P3 — Matriz v5.2
+// ═══════════════════════════════════════════════════════════════
+const COMPETENCIES = [
+  {
+    id: "1.1", dimension: "P1", dimensionName: "Propósito", weight: 2,
+    name: "Conduz a escola com visão clara e compartilhada",
+    levels: [
+      "Reconheço a importância de uma visão para a escola, mas ainda atuo de forma reativa, com pouca clareza sobre prioridades e sem envolver a equipe no planejamento.",
+      "Comunico metas básicas, defino algumas prioridades de forma mais explícita e começo a envolver a equipe na revisão do PPP, ainda sem constância ou sistematização.",
+      "Construo visão clara com a comunidade, uso o PPP para orientar decisões, reviso prioridades com regularidade e mobilizo a equipe em torno de objetivos comuns.",
+      "Minha escola tem visão reconhecida na rede; sistematizo processos de participação e inspiro outras unidades a construir projetos consistentes e colaborativos.",
+    ],
+  },
+  {
+    id: "1.2", dimension: "P1", dimensionName: "Propósito", weight: 3,
+    name: "Coloca a aprendizagem e o desenvolvimento integral no centro",
+    levels: [
+      "Reconheço os desafios de aprendizagem, mas ainda priorizo demandas administrativas acima das pedagógicas.",
+      "Dedico mais tempo às decisões pedagógicas e começo a usar dados básicos para compreender resultados de aprendizagem.",
+      "Organizo tempo e recursos para garantir foco pedagógico; uso dados para orientar ações; articulo acolhimento, inclusão e rigor acadêmico.",
+      "Sou reconhecido(a) por minha capacidade de orientar a escola para a aprendizagem com equidade e compartilho estratégias com outras escolas e redes.",
+    ],
+  },
+  {
+    id: "1.3", dimension: "P1", dimensionName: "Propósito", weight: 2,
+    name: "Age como líder público comprometido com o interesse coletivo",
+    levels: [
+      "Demonstro boa vontade, mas ainda enfrento dificuldades para tomar decisões transparentes e coerentes em contextos de pressão.",
+      "Busco justificativas técnicas para decisões, comunico com mais clareza e começo a fortalecer processos éticos junto à equipe.",
+      "Decido com integridade, justiça e transparência; lido com conflitos com firmeza; mantenho coerência entre discurso e prática.",
+      "Torno-me exemplo de liderança ética na rede; oriento outros gestores; minhas práticas influenciam formações, diretrizes e políticas de gestão.",
+    ],
+  },
+  {
+    id: "1.4", dimension: "P1", dimensionName: "Propósito", weight: 1,
+    name: "Sustenta uma cultura de altas expectativas com acolhimento",
+    levels: [
+      "Demonstro preocupação com desempenho, mas comunico expectativas de forma irregular ou pouco alinhada ao apoio a estudantes e equipe.",
+      "Passo a combinar exigência com apoio; reforço metas; reconheço avanços, ainda sem manter uma rotina consistente de acompanhamento.",
+      "Construo cultura em que estudantes e profissionais se sentem apoiados e desafiados; uso feedback, reconhecimento e diálogo para sustentar altas expectativas.",
+      "Minha escola é reconhecida pelo clima de altas expectativas e pertencimento; compartilho práticas que inspiram outras unidades a fortalecer sua cultura escolar.",
+    ],
+  },
+  {
+    id: "2.1", dimension: "P2", dimensionName: "Pedagogia", weight: 3,
+    name: "Observa, acompanha e apoia o trabalho pedagógico",
+    levels: [
+      "Realizo visitas de sala pontuais, geralmente motivadas por problemas. Ofereço orientações gerais, ainda pouco conectadas às necessidades reais da prática docente.",
+      "Organizo uma rotina básica de observação e registro aspectos essenciais. Dou feedbacks mais específicos e acolhedores, ainda sem acompanhamento sistemático ao longo do tempo.",
+      "Mantenho rotina consistente de observações; ofereço feedback formativo claro, construtivo e baseado em evidências; acompanho planos pedagógicos e apoio docentes em metas de desenvolvimento.",
+      "Sistematizo práticas de acompanhamento usadas por outros gestores; formo pares; construo cultura de prática reflexiva sustentada por ciclos regulares de observação e feedback.",
+    ],
+  },
+  {
+    id: "2.2", dimension: "P2", dimensionName: "Pedagogia", weight: 3,
+    name: "Usa dados de aprendizagem para orientar decisões",
+    levels: [
+      "Tenho acesso a dados, mas utilizo pouco. As decisões pedagógicas ainda se baseiam mais em impressões do que em informações sistemáticas.",
+      "Passo a analisar resultados básicos do cotidiano pedagógico (participação, avaliações internas, frequência) e começo a relacioná-los com práticas de sala de aula.",
+      "Analiso diferentes fontes de dados pedagógicos, identifico desigualdades de aprendizagem, cruzo indicadores, compartilho achados com a equipe e planejamos ações focalizadas.",
+      "Torno-me referência no uso pedagógico de dados; promovo formações sobre análise de dados; inspiro e apoio outras escolas a implementarem estratégias de monitoramento.",
+    ],
+  },
+  {
+    id: "2.3", dimension: "P2", dimensionName: "Pedagogia", weight: 2,
+    name: "Promove formação docente contínua e relevante",
+    levels: [
+      "Organizo formações de forma reativa, baseadas em demandas emergenciais ou orientações externas, sem conexão clara com prioridades pedagógicas.",
+      "Planejo formações mais alinhadas ao PPP, identifico necessidades da equipe e começo a integrar momentos de estudo e troca.",
+      "Construo plano sólido de formação contínua, articulo especialistas, promovo práticas colaborativas, conecto teoria e prática e garanto tempo protegido para aprender.",
+      "Minha escola se torna polo de aprendizagem; sistematizo experiências formativas; participo de redes de desenvolvimento docente e influencio políticas de formação.",
+    ],
+  },
+  {
+    id: "2.4", dimension: "P2", dimensionName: "Pedagogia", weight: 2,
+    name: "Integra currículo, avaliação e metodologias",
+    levels: [
+      "Reconheço documentos curriculares, mas a articulação entre o que se ensina, como se ensina e como se avalia ainda é pouco clara na escola.",
+      "Estabeleço diálogos mais frequentes com docentes sobre currículo e avaliação; incentivo ajustes pontuais em metodologias.",
+      "Crio coerência entre currículo, metodologias, tempos, espaços e avaliações; apoio o uso de instrumentos variados; garanto alinhamento entre planejamento e prática.",
+      "Contribuo para revisões curriculares da rede; sistematizo práticas de integração; inspiro escolas a fortalecer coerência pedagógica e foco em aprendizagens essenciais.",
+    ],
+  },
+  {
+    id: "2.5", dimension: "P2", dimensionName: "Pedagogia", weight: 2,
+    name: "Articula estratégias de inclusão e personalização",
+    levels: [
+      "Reconheço a diversidade dos estudantes, mas apoio ações inclusivas apenas de maneira pontual.",
+      "Organizo adaptações básicas, inicio diálogo com profissionais de apoio e identifico necessidades específicas de grupos ou estudantes.",
+      "Sustento planos articulados de inclusão (PAEs, AEE, adaptações curriculares, acessibilidade); garanto participação de todos; apoio docentes a diferenciar estratégias.",
+      "Sou reconhecido(a) pela condução ética e eficaz de inclusão; compartilho práticas com a rede; formo docentes e gestores sobre atendimento, equidade e personalização.",
+    ],
+  },
+  {
+    id: "3.1", dimension: "P3", dimensionName: "Pessoas", weight: 2,
+    name: "Desenvolve e acompanha profissionais da escola",
+    levels: [
+      "Faço orientações pontuais, geralmente reativas. Ainda não realizo conversas sistemáticas sobre desenvolvimento ou acompanhamento da prática.",
+      "Organizo conversas individuais com alguns profissionais, defino metas básicas e acompanho avanços de maneira irregular, ainda com pouca sistematização.",
+      "Mantenho rotina de desenvolvimento profissional com toda a equipe; defino metas claras; ofereço orientação específica; registro avanços e ajusto planos.",
+      "Acompanho e desenvolvo equipes de forma inspiradora; formo outros gestores sobre coaching educacional; sistematizo práticas de acompanhamento usadas pela rede.",
+    ],
+  },
+  {
+    id: "3.2", dimension: "P3", dimensionName: "Pessoas", weight: 3,
+    name: "Cultiva segurança psicológica e colaboração",
+    levels: [
+      "Demonstro abertura ao diálogo, mas ainda existe medo, silêncio ou desconfiança na equipe. Conflitos são deixados de lado ou tratados superficialmente.",
+      "Crio espaços de fala e escuta, estabeleço rotinas básicas de colaboração e intervenho quando há tensões mais evidentes.",
+      "Construo ambiente em que as pessoas dizem a verdade sem medo; incentivo colaboração real; acolho vulnerabilidades; combato rumores e fofocas com práticas de transparência.",
+      "Minha escola é reconhecida por ter clima saudável e colaborativo; práticas de segurança psicológica tornam-se referência; contribuo com formações sobre cultura organizacional.",
+    ],
+  },
+  {
+    id: "3.3", dimension: "P3", dimensionName: "Pessoas", weight: 2,
+    name: "Enfrenta discriminações e conflitos com firmeza e justiça",
+    levels: [
+      "Tenho boa intenção, mas hesito em intervir diante de situações de racismo, machismo, LGBTfobia, assédio ou violência. Respostas ainda são lentas ou pouco firmes.",
+      "Enfrento discriminações com mais rapidez, procuro apoio da rede quando necessário e comunico-me com mais clareza e firmeza.",
+      "Intervenho com justiça e firmeza sempre que há discriminação ou violência; documento casos; aciono a rede de proteção; protejo estudantes e profissionais com postura ética.",
+      "Torno-me exemplo de atuação ética; conduzo formações sobre convivência e direitos; inspiro políticas da rede e apoio outros gestores na condução de casos complexos.",
+    ],
+  },
+  {
+    id: "3.4", dimension: "P3", dimensionName: "Pessoas", weight: 1,
+    name: "Organiza o trabalho com clareza e respeito",
+    levels: [
+      "Defino algumas tarefas, mas as expectativas são ambíguas e a equipe tem dúvidas sobre papéis e responsabilidades.",
+      "Melhoro a distribuição de funções, estabeleço rotinas mais claras e começo a ajustar práticas e fluxos de comunicação.",
+      "Garanto clareza de funções, processos, horários e rotinas; reduzo ambiguidades; facilito o trabalho pedagógico; comunico decisões com transparência.",
+      "Sou reconhecido(a) por minha capacidade de estruturar equipes de forma eficiente e humana; apoio a rede a revisar práticas de organização escolar.",
+    ],
+  },
+  {
+    id: "3.5", dimension: "P3", dimensionName: "Pessoas", weight: 1,
+    name: "Promove bem-estar profissional e apoio mútuo",
+    levels: [
+      "Reconheço dificuldades da equipe, mas ofereço suporte de maneira informal e irregular.",
+      "Adoto algumas práticas de apoio (momentos de escuta, encaminhamentos, ajustes de rotina) e crio espaços de convivência.",
+      "Promovo cultura de apoio mútuo; observo sinais de sobrecarga; equilibro demandas; organizo estratégias preventivas de bem-estar.",
+      "Torno-me referência em saúde ocupacional e bem-estar profissional; contribuo para políticas de valorização docente; inspiro outras escolas a adotarem práticas de apoio.",
+    ],
+  },
+];
+
+const LEVEL_LABELS = ["Inicial", "Em Desenvolvimento", "Avançado", "Referência"];
+const DIMENSIONS   = ["P1", "P2", "P3"];
+const DIM_COLORS   = { P1: "#c4955a", P2: "#5a7ec4", P3: "#6dab8c" };
+const DIM_LABELS   = { P1: "Propósito", P2: "Pedagogia", P3: "Pessoas" };
+
+// ═══════════════════════════════════════════════════════════════
+// CONTRADIÇÕES — direcionais (va - vb >= diff)
+// ═══════════════════════════════════════════════════════════════
+const CONTRADICTION_RULES = [
+  { a: "1.2", b: "2.2", diff: 2, msg: "Você coloca a aprendizagem no centro (1.2), mas ainda usa poucos dados para orientar decisões pedagógicas (2.2). Como transformar essa intenção em prática sistemática?" },
+  { a: "2.1", b: "3.2", diff: 2, msg: "Você acompanha bem o trabalho pedagógico (2.1), mas a segurança psicológica da equipe ainda é baixa (3.2). Observar mais pode gerar desconforto se a confiança não estiver estabelecida." },
+  { a: "3.2", b: "3.3", diff: 2, msg: "Você cultiva segurança psicológica (3.2), mas ainda hesita em enfrentar discriminações com firmeza (3.3). Segurança real exige que todos saibam que conflitos sérios serão tratados." },
+  { a: "2.3", b: "2.1", diff: 2, msg: "Você promove formação docente (2.3), mas o acompanhamento em sala ainda é irregular (2.1). Formação sem observação tem menos impacto sobre a prática real." },
+  { a: "1.1", b: "2.4", diff: 2, msg: "Você constrói visão clara (1.1), mas a integração entre currículo, avaliação e metodologias ainda é frágil (2.4). Uma escola com propósito claro precisa que esse propósito apareça no que e como se ensina." },
+  { a: "3.4", b: "3.1", diff: 2, msg: "Você organiza bem o trabalho (3.4), mas o desenvolvimento individual dos profissionais ainda é irregular (3.1). Clareza de funções é necessária, mas não substitui o acompanhamento da trajetória de cada um." },
+  { a: "1.3", b: "3.3", diff: 2, msg: "Você se posiciona como líder público ético (1.3), mas ainda hesita diante de discriminações na equipe (3.3). Liderança ética se prova também — e sobretudo — nos momentos de conflito interno." },
+  { a: "2.5", b: "3.2", diff: 2, msg: "Você articula inclusão para os estudantes (2.5), mas a segurança psicológica da equipe ainda precisa crescer (3.2). Construir inclusão real exige um ambiente adulto também seguro e colaborativo." },
+];
+
+function detectContradictions(answers) {
+  const found = [];
+  for (const rule of CONTRADICTION_RULES) {
+    const va = answers[rule.a] ?? -1;
+    const vb = answers[rule.b] ?? -1;
+    if (va < 0 || vb < 0) continue;
+    if (va - vb >= rule.diff) found.push(rule.msg);
+  }
+  return found;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CÁLCULOS — IMLE escala 1-4
+// ═══════════════════════════════════════════════════════════════
+function calcResults(answers) {
+  const dimScores = {};
+  let totalW = 0, totalWV = 0;
+  for (const c of COMPETENCIES) {
+    const raw = answers[c.id];
+    if (raw === undefined || raw === null) continue;
+    const nivel14 = raw + 1;
+    if (!dimScores[c.dimension]) dimScores[c.dimension] = { sumW: 0, sumWV: 0 };
+    dimScores[c.dimension].sumW  += c.weight;
+    dimScores[c.dimension].sumWV += nivel14 * c.weight;
+    totalW  += c.weight;
+    totalWV += nivel14 * c.weight;
+  }
+  const dims = {};
+  for (const d of DIMENSIONS) {
+    const s = dimScores[d];
+    dims[d] = s ? s.sumWV / s.sumW : 0;
+  }
+  return { dims, imle: totalW > 0 ? totalWV / totalW : 0 };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUBMIT — text/plain;charset=utf-8 evita preflight CORS
+// ═══════════════════════════════════════════════════════════════
+async function submitToSheets(payload) {
+  const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      token:                     CONFIG.APP_TOKEN,
+      submission_id:             payload.submission_id,
+      app_version:               payload.app_version,
+      ciclo_projeto:             payload.ciclo_projeto,
+      data_avaliacao:            payload.data_avaliacao,
+      tipo_avaliacao:            payload.tipo_avaliacao,
+      email:                     payload.email,
+      nome:                      payload.nome,
+      escola:                    payload.escola,
+      rede:                      payload.rede,
+      media_P1:                  payload.media_P1,
+      media_P2:                  payload.media_P2,
+      media_P3:                  payload.media_P3,
+      IMLE:                      payload.IMLE,
+      competencia_foco:          payload.competencia_foco,
+      quer_ser_mentor:           payload.quer_ser_mentor,
+      competencia_mentoria:      payload.competencia_mentoria,
+      link_competencia_foco:     payload.link_competencia_foco,
+      link_competencia_mentoria: payload.link_competencia_mentoria,
+      link_portfolio:            payload.link_portfolio,
+      answers:                   payload.answers_json,
+    }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = JSON.parse(await res.text());
+  if (json.ok === false) throw new Error(json.error || "Erro no servidor");
+  return json;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RADAR SVG
+// ═══════════════════════════════════════════════════════════════
+function RadarChart({ dims }) {
+  const cx = 120, cy = 115, r = 85;
+  const angles = [-90, 30, 150];
+  const toRad  = (deg) => (deg * Math.PI) / 180;
+
+  const points = DIMENSIONS.map((d, i) => {
+    const angle = toRad(angles[i]);
+    const val   = dims[d] || 0;
+    const ratio = val / 4;
+    return {
+      x: cx + r * ratio * Math.cos(angle),
+      y: cy + r * ratio * Math.sin(angle),
+      lx: cx + (r + 22) * Math.cos(angle),
+      ly: cy + (r + 22) * Math.sin(angle),
+      dim: d, val,
+    };
+  });
+
+  const polyPts = points.map((p) => `${p.x},${p.y}`).join(" ");
+
+  return (
+    <svg viewBox="0 0 240 230" style={{ width: "100%", maxWidth: 280, display: "block", margin: "0 auto" }}>
+      {[1,2,3,4].map((lv) => {
+        const gPts = DIMENSIONS.map((_, i) => {
+          const angle = toRad(angles[i]);
+          const ratio = lv / 4;
+          return `${cx + r * ratio * Math.cos(angle)},${cy + r * ratio * Math.sin(angle)}`;
+        }).join(" ");
+        return <polygon key={lv} points={gPts} fill="none" stroke="#ddd9d4" strokeWidth="1" />;
+      })}
+      {DIMENSIONS.map((_, i) => {
+        const angle = toRad(angles[i]);
+        return <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(angle)} y2={cy + r * Math.sin(angle)} stroke="#ddd9d4" strokeWidth="1" />;
+      })}
+      <polygon points={polyPts} fill="rgba(196,149,90,0.15)" stroke="#c4955a" strokeWidth="2" strokeLinejoin="round" />
+      {points.map((p) => <circle key={p.dim} cx={p.x} cy={p.y} r="4" fill={DIM_COLORS[p.dim]} />)}
+      {points.map((p) => (
+        <text key={p.dim} x={p.lx} y={p.ly + 4} textAnchor="middle" fontSize="11" fontFamily="DM Sans" fill="#5a5550" fontWeight="600">
+          {p.dim} {p.val.toFixed(1)}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ESTILOS
+// ═══════════════════════════════════════════════════════════════
+const S = {
+  wrap:     { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "24px 16px 48px" },
+  card:     { width: "100%", maxWidth: 560, backgroundColor: "#fff", borderRadius: 20, padding: "32px 28px", boxShadow: "0 2px 24px rgba(45,41,38,0.07)", border: "1px solid #e8e4df", marginTop: 16 },
+  h1:       { fontFamily: "'DM Serif Display', serif", fontSize: 26, color: "#2d2926", lineHeight: 1.25, margin: "0 0 8px" },
+  h2:       { fontFamily: "'DM Serif Display', serif", fontSize: 20, color: "#2d2926", margin: "0 0 14px" },
+  sub:      { fontSize: 14, color: "#8a8580", lineHeight: 1.6, margin: "0 0 20px" },
+  label:    { fontSize: 13, fontWeight: 600, color: "#5a5550", display: "block", marginBottom: 6 },
+  input:    { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e0ddd8", fontSize: 14, fontFamily: "'DM Sans', sans-serif", color: "#2d2926", outline: "none", background: "#fff", marginBottom: 14 },
+  btn:      { display: "block", width: "100%", padding: "14px 20px", borderRadius: 12, border: "none", backgroundColor: "#c4955a", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", marginTop: 8 },
+  btnGhost: { display: "block", width: "100%", padding: "11px 20px", borderRadius: 12, border: "1.5px solid #e0ddd8", backgroundColor: "transparent", color: "#8a8580", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", marginTop: 8 },
+  tag:      (color) => ({ display: "inline-block", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontWeight: 700, backgroundColor: color + "22", color: color, marginBottom: 8 }),
+  barWrap:  { background: "#f0ede8", borderRadius: 6, height: 8, flex: 1, overflow: "hidden" },
+  bar:      (pct, color) => ({ width: `${pct}%`, height: "100%", background: color, borderRadius: 6, transition: "width 0.6s ease" }),
+  infoBox:  (bg, border) => ({ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }),
+};
+
+// ═══════════════════════════════════════════════════════════════
+// BANNER DE ENVIO PENDENTE
+// ═══════════════════════════════════════════════════════════════
+function PendingBanner({ onDismiss }) {
+  const [status, setStatus] = useState("idle");
+
+  const retry = async () => {
+    const raw = localStorage.getItem("pending_submission");
+    if (!raw) { onDismiss(); return; }
+    setStatus("sending");
+    try {
+      await submitToSheets(JSON.parse(raw));
+      localStorage.removeItem("pending_submission");
+      setStatus("success");
+      setTimeout(onDismiss, 2000);
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+      background: "#fff9f0", borderBottom: "2px solid #f0d9a8", padding: "12px 20px",
+      display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 13, color: "#7a5a2a", flex: 1 }}>
+        ⚠️ Você tem uma avaliação que não foi enviada. Deseja reenviar agora?
+      </span>
+      {status === "success" && <span style={{ fontSize: 13, color: "#2a7a50", fontWeight: 600 }}>✓ Enviado!</span>}
+      {status === "error"   && <span style={{ fontSize: 13, color: "#c04040" }}>Falhou. Tente novamente.</span>}
+      {status !== "success" && (
+        <>
+          <button onClick={retry} disabled={status === "sending"}
+            style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#c4955a", color: "#fff",
+              fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>
+            {status === "sending" ? "Enviando…" : "Reenviar"}
+          </button>
+          <button onClick={() => { localStorage.removeItem("pending_submission"); onDismiss(); }}
+            style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e0ddd8", background: "transparent",
+              color: "#8a8580", fontSize: 13, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>
+            Descartar
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TELA DE BOAS-VINDAS
+// ═══════════════════════════════════════════════════════════════
+function WelcomeScreen({ onStart }) {
+  const [form, setForm] = useState({ nome: "", email: "", escola: "", rede: "", tipo: "AUTO" });
+  const [err,  setErr]  = useState("");
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleStart = () => {
+    if (!form.nome.trim())  { setErr("Por favor, informe seu nome."); return; }
+    if (!form.email.trim() || !form.email.includes("@")) { setErr("Informe um e-mail válido."); return; }
+    if (!form.escola.trim()) { setErr("Informe o nome da escola."); return; }
+    if (!form.rede.trim())   { setErr("Informe a rede/município."); return; }
+    setErr("");
+    onStart(form);
+  };
+
+  return (
+    <div style={S.wrap} className="fade-in">
+      <div style={{ ...S.card, paddingTop: 28 }}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 4 }}>🧭</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#c4955a", textTransform: "uppercase", marginBottom: 8 }}>Instituto Salto</div>
+          <h1 style={S.h1}>Bússola do Gestor</h1>
+          <p style={{ ...S.sub, marginBottom: 0 }}>Autoavaliação de competências da Matriz 7 Ps</p>
+        </div>
+        <div style={{ borderTop: "1px solid #f0ede8", margin: "20px 0" }} />
+        <div style={S.infoBox("#fdf9f4", "#e8dfd0")}>
+          <p style={{ fontSize: 13, color: "#6a6560", lineHeight: 1.65, margin: 0 }}>
+            <strong style={{ color: "#5a5550" }}>O que é:</strong> Uma ferramenta formativa baseada na Matriz de Competências de Gestores Escolares (v5.2) do Instituto Salto, cobrindo Propósito, Pedagogia e Pessoas.<br /><br />
+            <strong style={{ color: "#5a5550" }}>Para que serve:</strong> Ajudar você a identificar onde está, escolher uma área de foco e, se quiser, oferecer sua experiência como mentor(a) de colegas.<br /><br />
+            <strong style={{ color: "#5a5550" }}>Honestidade importa:</strong> Não há resposta certa. Quanto mais honesto(a) você for, mais útil será o resultado.
+          </p>
+        </div>
+        <div style={{ borderTop: "1px solid #f0ede8", margin: "20px 0 16px" }} />
+        <label style={S.label}>Nome completo *</label>
+        <input style={S.input} placeholder="Seu nome" value={form.nome} onChange={set("nome")} />
+        <label style={S.label}>E-mail institucional *</label>
+        <input style={S.input} type="email" placeholder="seu@email.com.br" value={form.email} onChange={set("email")} />
+        <label style={S.label}>Escola *</label>
+        <input style={S.input} placeholder="Nome da escola" value={form.escola} onChange={set("escola")} />
+        <label style={S.label}>Rede / Município *</label>
+        <input style={S.input} placeholder="Ex.: Porto Alegre/RS" value={form.rede} onChange={set("rede")} />
+        <label style={S.label}>Tipo de avaliação</label>
+        <select style={S.input} value={form.tipo} onChange={set("tipo")}>
+          <option value="AUTO">Autoavaliação</option>
+          <option value="360">Avaliação 360 (por pares/supervisão)</option>
+        </select>
+        {err && <p style={{ color: "#c44", fontSize: 13, marginBottom: 10 }}>{err}</p>}
+        <button style={S.btn} onClick={handleStart}>Começar a avaliação →</button>
+        <p style={{ fontSize: 12, color: "#b0aba6", textAlign: "center", marginTop: 14 }}>
+          14 competências · ~10 minutos · seus dados ficam seguros
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TELA DE PERGUNTAS
+// ═══════════════════════════════════════════════════════════════
+function QuestionScreen({ onFinish }) {
+  const [current, setCurrent] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const comp     = COMPETENCIES[current];
+  const shuffled = useMemo(() => shuffle([0, 1, 2, 3]), [comp.id]);
+  const progress = ((current + 1) / COMPETENCIES.length) * 100;
+
+  const choose = (idx) => {
+    const newAns = { ...answers, [comp.id]: idx };
+    setAnswers(newAns);
+    setTimeout(() => {
+      if (current < COMPETENCIES.length - 1) setCurrent(current + 1);
+      else onFinish(newAns);
+    }, 180);
+  };
+
+  return (
+    <div style={S.wrap} className="fade-in">
+      <div style={S.card}>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#b0aba6", marginBottom: 6 }}>
+            <span>{current + 1} de {COMPETENCIES.length}</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+          <div style={{ background: "#f0ede8", borderRadius: 6, height: 5, overflow: "hidden" }}>
+            <div style={{ width: `${progress}%`, height: "100%", background: DIM_COLORS[comp.dimension], transition: "width 0.4s ease", borderRadius: 6 }} />
+          </div>
+        </div>
+        <div style={S.tag(DIM_COLORS[comp.dimension])}>{comp.dimension} · {comp.dimensionName}</div>
+        <h2 style={{ ...S.h2, marginBottom: 6 }}>{comp.name}</h2>
+        <p style={{ fontSize: 13, color: "#b0aba6", marginBottom: 20 }}>Escolha o descritor que melhor representa sua prática atual.</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {shuffled.map((lvlIdx) => {
+            const isSelected = answers[comp.id] === lvlIdx;
+            return (
+              <button key={lvlIdx} onClick={() => choose(lvlIdx)} style={{
+                display: "flex", gap: 12, alignItems: "flex-start", textAlign: "left",
+                padding: "14px 16px", borderRadius: 12, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                border: isSelected ? `2px solid ${DIM_COLORS[comp.dimension]}` : "1.5px solid #e8e4df",
+                background: isSelected ? DIM_COLORS[comp.dimension] + "11" : "#fff",
+                transition: "all 0.15s",
+              }}>
+                <span style={{ fontWeight: 700, fontSize: 12, color: DIM_COLORS[comp.dimension], flexShrink: 0, marginTop: 2, minWidth: 18 }}>
+                  {lvlIdx + 1}
+                </span>
+                <span style={{ fontSize: 14, color: "#4a4540", lineHeight: 1.6 }}>{comp.levels[lvlIdx]}</span>
+              </button>
+            );
+          })}
+        </div>
+        {current > 0 && (
+          <button style={S.btnGhost} onClick={() => setCurrent(current - 1)}>← Voltar</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TELA DE RESULTADOS
+// ═══════════════════════════════════════════════════════════════
+function ResultsScreen({ answers, userData, onDecide }) {
+  const { dims, imle } = useMemo(() => calcResults(answers), [answers]);
+  const contradictions = useMemo(() => detectContradictions(answers), [answers]);
+  const interpretation = getImleInterpretation(imle);
+
+  return (
+    <div style={S.wrap} className="fade-in">
+      <div style={S.card}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 36, marginBottom: 4 }}>🧭</div>
+          <h2 style={S.h2}>Seu resultado</h2>
+          <p style={{ fontSize: 13, color: "#8a8580" }}>{userData.nome} · {userData.escola}</p>
+        </div>
+        <div style={{ ...S.infoBox("#fdf9f4", "#e8dfd0"), textAlign: "center", marginBottom: 16 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#c4955a", marginBottom: 4 }}>
+            IMLE — Índice de Maturidade de Liderança Escolar
+          </p>
+          <div style={{ fontSize: 38, fontWeight: 700, color: "#2d2926", fontFamily: "'DM Serif Display', serif", lineHeight: 1 }}>
+            {imle.toFixed(1)}{" "}
+            <span style={{ fontSize: 18, color: "#b0aba6", fontFamily: "'DM Sans', sans-serif", fontWeight: 400 }}>/ 4,0</span>
+          </div>
+          {CONFIG.SHOW_IMLE_BANDS && <div style={{ marginTop: 6 }}><span style={S.tag("#c4955a")}>{interpretation.label}</span></div>}
+          <p style={{ fontSize: 13, color: "#6a6560", marginTop: 8, lineHeight: 1.55 }}>
+            {CONFIG.SHOW_IMLE_BANDS ? interpretation.desc
+              : imle >= 3.3 ? "Você está num patamar avançado de liderança. Há espaço para se tornar referência sistêmica."
+              : imle >= 2.6 ? "Você demonstra práticas consistentes e tem espaço claro para aprofundar sua liderança."
+              : imle >= 1.6 ? "Você está em desenvolvimento e já acumulou experiências valiosas. Foco em algumas competências pode acelerar seu crescimento."
+              : "Você está nas etapas iniciais dessas competências — um bom ponto de partida para um plano de desenvolvimento focado."}
+          </p>
+        </div>
+        <div style={{ marginBottom: 16 }}><RadarChart dims={dims} /></div>
+        {DIMENSIONS.map((d) => {
+          const comps = COMPETENCIES.filter((c) => c.dimension === d);
+          return (
+            <div key={d} style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={S.tag(DIM_COLORS[d])}>{d}</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "#2d2926" }}>{DIM_LABELS[d]}</span>
+                <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: DIM_COLORS[d] }}>{(dims[d] || 0).toFixed(1)}</span>
+              </div>
+              {comps.map((c) => {
+                const v   = answers[c.id] ?? -1;
+                const pct = v >= 0 ? ((v + 1) / 4) * 100 : 0;
+                return (
+                  <div key={c.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6a6560", marginBottom: 3 }}>
+                      <span>{c.id} · {c.name}</span>
+                      <span style={{ fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>{v >= 0 ? LEVEL_LABELS[v] : "—"}</span>
+                    </div>
+                    <div style={S.barWrap}><div style={S.bar(pct, DIM_COLORS[d])} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {contradictions.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#b07a3a", marginBottom: 8 }}>💡 Pontos para reflexão</p>
+            {contradictions.map((msg, i) => (
+              <div key={i} style={S.infoBox("#fff9f0", "#f0d9a8")}>
+                <p style={{ fontSize: 13, color: "#7a5a2a", lineHeight: 1.6, margin: 0 }}>{msg}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <button style={{ ...S.btn, marginTop: 20 }} onClick={onDecide}>Escolher minha competência-foco →</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TELA DE DECISÕES
+// ═══════════════════════════════════════════════════════════════
+function DecisionScreen({ answers, userData, results, onConfirm }) {
+  const [focus,      setFocus]      = useState(null);
+  const [mentor,     setMentor]     = useState(null);
+  const [mentorComp, setMentorComp] = useState(null);
+  const [err,        setErr]        = useState("");
+
+  const lowComps  = COMPETENCIES.filter((c) => (answers[c.id] ?? -1) <= 1);
+  const highComps = COMPETENCIES.filter((c) => (answers[c.id] ?? -1) >= 2);
+
+  const handleConfirm = () => {
+    if (!focus)                { setErr("Escolha uma competência-foco para continuar."); return; }
+    if (mentor === null)       { setErr("Indique se deseja ser mentor(a)."); return; }
+    if (mentor && !mentorComp) { setErr("Escolha a competência em que você vai oferecer mentoria."); return; }
+    setErr("");
+    onConfirm({
+      focus, mentor, mentorComp,
+      linkFocus:     buildCompLink(focus),
+      linkMentor:    mentor && mentorComp ? buildCompLink(mentorComp) : "",
+      linkPortfolio: buildPortfolioLink(userData.email),
+    });
+  };
+
+  return (
+    <div style={S.wrap} className="fade-in">
+      <div style={S.card}>
+        <h2 style={S.h2}>Suas decisões de desenvolvimento</h2>
+        <p style={S.sub}>Com base no que você respondeu, defina seu próximo passo.</p>
+        <div style={{ marginBottom: 24 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "#2d2926", marginBottom: 4 }}>Qual competência você quer desenvolver primeiro? *</p>
+          <p style={{ fontSize: 13, color: "#8a8580", marginBottom: 12 }}>
+            {lowComps.length > 0 ? "Mostramos as competências onde há mais espaço de crescimento." : "Você está bem em todas — escolha onde quer aprofundar ainda mais."}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(lowComps.length > 0 ? lowComps : COMPETENCIES).map((c) => (
+              <button key={c.id} onClick={() => setFocus(c.id)} style={{
+                display: "flex", gap: 10, alignItems: "center", textAlign: "left",
+                padding: "12px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                border: focus === c.id ? `2px solid ${DIM_COLORS[c.dimension]}` : "1.5px solid #e8e4df",
+                background: focus === c.id ? DIM_COLORS[c.dimension] + "11" : "#fff",
+                transition: "all 0.15s",
+              }}>
+                <span style={{ ...S.tag(DIM_COLORS[c.dimension]), margin: 0, flexShrink: 0 }}>{c.id}</span>
+                <span style={{ fontSize: 13, color: "#4a4540", lineHeight: 1.5 }}>
+                  {c.name} <span style={{ color: "#b0aba6", marginLeft: 4 }}>({LEVEL_LABELS[answers[c.id] ?? 0]})</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: 24 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "#2d2926", marginBottom: 4 }}>Você quer se candidatar a mentor(a)? *</p>
+          <p style={{ fontSize: 13, color: "#8a8580", marginBottom: 12 }}>Gestores com nível Avançado ou Referência em alguma competência podem apoiar colegas.</p>
+          <div style={{ display: "flex", gap: 10 }}>
+            {["Sim", "Não"].map((opt) => {
+              const val = opt === "Sim";
+              return (
+                <button key={opt} onClick={() => { setMentor(val); if (!val) setMentorComp(null); }} style={{
+                  flex: 1, padding: "11px", borderRadius: 10, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                  fontWeight: 600, fontSize: 14,
+                  border: mentor === val ? "2px solid #c4955a" : "1.5px solid #e8e4df",
+                  background: mentor === val ? "#c4955a11" : "#fff",
+                  color: mentor === val ? "#c4955a" : "#6a6560",
+                  transition: "all 0.15s",
+                }}>{opt}</button>
+              );
+            })}
+          </div>
+          {mentor === true && (
+            <div style={{ marginTop: 14 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "#5a5550", marginBottom: 8 }}>Em qual competência você vai oferecer mentoria? *</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(highComps.length > 0 ? highComps : COMPETENCIES).map((c) => (
+                  <button key={c.id} onClick={() => setMentorComp(c.id)} style={{
+                    display: "flex", gap: 10, alignItems: "center", textAlign: "left",
+                    padding: "11px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                    border: mentorComp === c.id ? `2px solid ${DIM_COLORS[c.dimension]}` : "1.5px solid #e8e4df",
+                    background: mentorComp === c.id ? DIM_COLORS[c.dimension] + "11" : "#fff",
+                    transition: "all 0.15s",
+                  }}>
+                    <span style={{ ...S.tag(DIM_COLORS[c.dimension]), margin: 0, flexShrink: 0 }}>{c.id}</span>
+                    <span style={{ fontSize: 13, color: "#4a4540" }}>
+                      {c.name} <span style={{ color: "#b0aba6", marginLeft: 4 }}>({LEVEL_LABELS[answers[c.id] ?? 0]})</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        {err && <p style={{ color: "#c44", fontSize: 13, marginBottom: 10 }}>{err}</p>}
+        <button style={S.btn} onClick={handleConfirm}>Confirmar e enviar →</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TELA DE CONFIRMAÇÃO
+// ═══════════════════════════════════════════════════════════════
+function ConfirmationScreen({ userData, answers, results, decisions }) {
+  const { imle, dims } = results;
+  const [status,  setStatus] = useState("idle");
+  const [errMsg,  setErrMsg] = useState("");
+  const submittedRef = useRef(false);
+
+  const buildPayload = () => ({
+    submission_id:             generateSubmissionId(),
+    app_version:               CONFIG.APP_VERSION,
+    ciclo_projeto:             CONFIG.CICLO_PROJETO,
+    nome:                      userData.nome,
+    email:                     normalizeEmail(userData.email),
+    escola:                    userData.escola,
+    rede:                      userData.rede,
+    tipo_avaliacao:            userData.tipo,
+    data_avaliacao:            new Date().toISOString().slice(0, 10),
+    media_P1:                  parseFloat(dims.P1.toFixed(2)),
+    media_P2:                  parseFloat(dims.P2.toFixed(2)),
+    media_P3:                  parseFloat(dims.P3.toFixed(2)),
+    IMLE:                      parseFloat(imle.toFixed(2)),
+    competencia_foco:          decisions.focus,
+    quer_ser_mentor:           decisions.mentor,
+    competencia_mentoria:      decisions.mentorComp || "",
+    link_competencia_foco:     decisions.linkFocus,
+    link_competencia_mentoria: decisions.linkMentor,
+    link_portfolio:            decisions.linkPortfolio,
+    answers_json:              JSON.stringify(answers),
+  });
+
+  const doSubmit = async () => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setStatus("sending");
+    const payload = buildPayload();
+    try {
+      await submitToSheets(payload);
+      localStorage.removeItem("pending_submission");
+      setStatus("success");
+    } catch (e) {
+      submittedRef.current = false;
+      setErrMsg("Não foi possível enviar agora. Suas respostas foram salvas neste dispositivo.");
+      localStorage.setItem("pending_submission", JSON.stringify(payload));
+      setStatus("error");
+    }
+  };
+
+  const retry = () => { submittedRef.current = false; doSubmit(); };
+
+  return (
+    <div style={S.wrap} className="fade-in">
+      <div style={S.card}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>
+            {status === "success" ? "✅" : status === "error" ? "⚠️" : status === "sending" ? "⏳" : "📋"}
+          </div>
+          <h2 style={S.h2}>
+            {status === "success" ? "Enviado com sucesso!" : status === "error" ? "Erro no envio" : status === "sending" ? "Enviando…" : "Resumo da sua avaliação"}
+          </h2>
+        </div>
+        <div style={S.infoBox("#f5f8ff", "#d0daf0")}>
+          <p style={{ fontSize: 13, color: "#4a4560", lineHeight: 1.7, margin: 0 }}>
+            <strong>IMLE:</strong> {imle.toFixed(1)} / 4,0<br />
+            <strong>P1:</strong> {dims.P1.toFixed(1)} · <strong>P2:</strong> {dims.P2.toFixed(1)} · <strong>P3:</strong> {dims.P3.toFixed(1)}<br />
+            <strong>Competência-foco:</strong> {decisions.focus} · {COMPETENCIES.find(c => c.id === decisions.focus)?.name}<br />
+            {decisions.mentor && <><strong>Mentoria em:</strong> {decisions.mentorComp} · {COMPETENCIES.find(c => c.id === decisions.mentorComp)?.name}<br /></>}
+            <strong>Ciclo:</strong> {CONFIG.CICLO_PROJETO} · <strong>Tipo:</strong> {userData.tipo === "AUTO" ? "Autoavaliação" : "Avaliação 360"}
+          </p>
+        </div>
+        <div style={{ marginTop: 16, marginBottom: 8 }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#5a5550", marginBottom: 10 }}>Seus materiais de desenvolvimento:</p>
+          <a href={decisions.linkFocus} target="_blank" rel="noreferrer" style={{
+            display: "block", padding: "12px 16px", borderRadius: 10, background: "#c4955a", color: "#fff",
+            textDecoration: "none", fontSize: 13, fontWeight: 600, marginBottom: 8, textAlign: "center",
+          }}>📘 Unidade digital: Competência {decisions.focus}</a>
+          {decisions.mentor && decisions.mentorComp && (
+            <a href={decisions.linkMentor} target="_blank" rel="noreferrer" style={{
+              display: "block", padding: "12px 16px", borderRadius: 10, background: "#6dab8c", color: "#fff",
+              textDecoration: "none", fontSize: 13, fontWeight: 600, marginBottom: 8, textAlign: "center",
+            }}>🤝 Competência de mentoria: {decisions.mentorComp}</a>
+          )}
+          <a href={decisions.linkPortfolio} target="_blank" rel="noreferrer" style={{
+            display: "block", padding: "12px 16px", borderRadius: 10, border: "1.5px solid #e0ddd8",
+            color: "#5a7ec4", textDecoration: "none", fontSize: 13, fontWeight: 600, textAlign: "center",
+          }}>🗂️ Meu portfólio digital</a>
+        </div>
+        {status === "idle" && (
+          <button style={{ ...S.btn, marginTop: 12 }} onClick={doSubmit}>Confirmar e registrar minha avaliação</button>
+        )}
+        {status === "sending" && (
+          <button style={{ ...S.btn, marginTop: 12, opacity: 0.6, cursor: "not-allowed" }} disabled>Enviando…</button>
+        )}
+        {status === "error" && (
+          <div style={{ marginTop: 12 }}>
+            <div style={S.infoBox("#fff5f5", "#f0c0c0")}>
+              <p style={{ fontSize: 13, color: "#c04040", margin: 0 }}>{errMsg}</p>
+            </div>
+            <button style={S.btn} onClick={retry}>Tentar novamente</button>
+          </div>
+        )}
+        {status === "success" && (
+          <div style={S.infoBox("#f0fff8", "#a0e0c0")}>
+            <p style={{ fontSize: 13, color: "#2a7a50", margin: 0, lineHeight: 1.6 }}>
+              ✓ Suas respostas foram registradas. A próxima avaliação sugerida é em 3 meses (ciclo {CONFIG.CICLO_PROJETO}).
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// APP PRINCIPAL
+// ═══════════════════════════════════════════════════════════════
+function App() {
+  const [screen,      setScreen]      = useState("welcome");
+  const [userData,    setUserData]    = useState(null);
+  const [answers,     setAnswers]     = useState({});
+  const [results,     setResults]     = useState(null);
+  const [decisions,   setDecisions]   = useState(null);
+  const [showPending, setShowPending] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem("pending_submission")) setShowPending(true);
+  }, []);
+
+  const handleStart = (form) => { setUserData(form); setScreen("questions"); };
+  const handleFinishQuestions = (ans) => { setAnswers(ans); setResults(calcResults(ans)); setScreen("results"); };
+  const handleDecide = (dec) => { setDecisions(dec); setScreen("confirmation"); };
+
+  return (
+    <>
+      {showPending && <PendingBanner onDismiss={() => setShowPending(false)} />}
+      <div style={showPending ? { paddingTop: 60 } : {}}>
+        {screen === "welcome"      && <WelcomeScreen onStart={handleStart} />}
+        {screen === "questions"    && <QuestionScreen onFinish={handleFinishQuestions} />}
+        {screen === "results"      && <ResultsScreen answers={answers} userData={userData} results={results} onDecide={() => setScreen("decisions")} />}
+        {screen === "decisions"    && <DecisionScreen answers={answers} userData={userData} results={results} onConfirm={handleDecide} />}
+        {screen === "confirmation" && <ConfirmationScreen userData={userData} answers={answers} results={results} decisions={decisions} />}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
