@@ -27,12 +27,27 @@ const { useState, useMemo, useEffect, useRef } = React;
 // ═══════════════════════════════════════════════════════════════
 const CONFIG = {
   APP_VERSION: "1.0.0",
+
+  // FIX 3: ciclo_projeto adicionado — formato "AAAA-TN" (ex: "2026-T1")
+  // Altere a cada trimestre antes de redistribuir o arquivo
   CICLO_PROJETO: "2026-T1",
+
+  // Backend — cole a URL do seu Google Apps Script Web App aqui
   APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyLjxEWsvEBonEgZaJ6m3q1oPGEWDSXXLA4_PAnNJnBTFm8lba_RBv82w5gJggb-CdM3A/exec",
+
+  // FIX 1: Token enviado no body do payload (não só no header)
+  // Mesmo valor deve estar no Apps Script
   APP_TOKEN: "salto-bussola-2026",
+
+  // Links dinâmicos — altere os templates sem tocar no resto do código
+  // {COMP_ID} será substituído pelo id da competência com hífen (ex.: "2-1")
   BASE_COMP_URL: "https://salto.org.br/bussola/competencias/{COMP_ID}",
   BASE_PORTFOLIO_URL: "https://salto.org.br/portfolio?email={EMAIL}",
+
+  // Exibir faixas interpretativas do IMLE?
+  // false = só número + mensagem neutra (recomendado para V1)
   SHOW_IMLE_BANDS: false,
+
   IMLE_BANDS: [
     { max: 1.5, label: "Estruturação",        desc: "Você está nas etapas iniciais de desenvolvimento nessas competências." },
     { max: 2.5, label: "Consolidação",         desc: "Você demonstra avanços consistentes e tem espaço claro para crescer." },
@@ -44,9 +59,9 @@ const CONFIG = {
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════
-const normalizeEmail    = (e) => e.trim().toLowerCase();
-const compIdToSlug      = (id) => id.replace(".", "-");
-const buildCompLink     = (id)    => CONFIG.BASE_COMP_URL.replace("{COMP_ID}", compIdToSlug(id));
+const normalizeEmail   = (e) => e.trim().toLowerCase();
+const compIdToSlug     = (id) => id.replace(".", "-");
+const buildCompLink    = (id)    => CONFIG.BASE_COMP_URL.replace("{COMP_ID}", compIdToSlug(id));
 const buildPortfolioLink = (email) => CONFIG.BASE_PORTFOLIO_URL.replace("{EMAIL}", encodeURIComponent(normalizeEmail(email)));
 
 function getImleInterpretation(imle) {
@@ -70,7 +85,8 @@ function generateSubmissionId() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// COMPETÊNCIAS P1, P2, P3 — Matriz v5.2
+// DADOS — COMPETÊNCIAS P1, P2, P3
+// Descritores extraídos da Matriz v5.2 (Instituto Salto)
 // ═══════════════════════════════════════════════════════════════
 const COMPETENCIES = [
   {
@@ -221,16 +237,28 @@ const DIM_COLORS   = { P1: "#c4955a", P2: "#5a7ec4", P3: "#6dab8c" };
 const DIM_LABELS   = { P1: "Propósito", P2: "Pedagogia", P3: "Pessoas" };
 
 // ═══════════════════════════════════════════════════════════════
-// CONTRADIÇÕES — direcionais (va - vb >= diff)
+// CONTRADIÇÕES
 // ═══════════════════════════════════════════════════════════════
+// Cada regra é DIRECIONAL: a contradição só existe quando A está alto E B está baixo.
+// Lógica: (va - vb >= diff) — não usamos Math.abs para evitar falso-positivo inverso.
+// Exemplo: "Você promove formação (A alto) mas não observa salas (B baixo)" faz sentido.
+//          O inverso ("você observa mas não faz formação") é outra situação, sem mensagem.
 const CONTRADICTION_RULES = [
+  // A alto (aprendizagem no centro) + B baixo (pouco uso de dados) → incoerência
   { a: "1.2", b: "2.2", diff: 2, msg: "Você coloca a aprendizagem no centro (1.2), mas ainda usa poucos dados para orientar decisões pedagógicas (2.2). Como transformar essa intenção em prática sistemática?" },
+  // A alto (acompanha salas) + B baixo (segurança psicológica frágil) → risco de clima ruim
   { a: "2.1", b: "3.2", diff: 2, msg: "Você acompanha bem o trabalho pedagógico (2.1), mas a segurança psicológica da equipe ainda é baixa (3.2). Observar mais pode gerar desconforto se a confiança não estiver estabelecida." },
+  // A alto (segurança psicológica) + B baixo (hesita em enfrentar discriminações) → contradição
   { a: "3.2", b: "3.3", diff: 2, msg: "Você cultiva segurança psicológica (3.2), mas ainda hesita em enfrentar discriminações com firmeza (3.3). Segurança real exige que todos saibam que conflitos sérios serão tratados." },
+  // A alto (faz formação docente) + B baixo (pouca observação) → formação sem evidência
   { a: "2.3", b: "2.1", diff: 2, msg: "Você promove formação docente (2.3), mas o acompanhamento em sala ainda é irregular (2.1). Formação sem observação tem menos impacto sobre a prática real." },
+  // A alto (visão clara) + B baixo (currículo desarticulado) → propósito sem execução
   { a: "1.1", b: "2.4", diff: 2, msg: "Você constrói visão clara (1.1), mas a integração entre currículo, avaliação e metodologias ainda é frágil (2.4). Uma escola com propósito claro precisa que esse propósito apareça no que e como se ensina." },
+  // A alto (organiza bem o trabalho) + B baixo (desenvolvimento irregular) → estrutura sem desenvolvimento
   { a: "3.4", b: "3.1", diff: 2, msg: "Você organiza bem o trabalho (3.4), mas o desenvolvimento individual dos profissionais ainda é irregular (3.1). Clareza de funções é necessária, mas não substitui o acompanhamento da trajetória de cada um." },
+  // A alto (líder ético publicamente) + B baixo (hesita em casos internos) → ética seletiva
   { a: "1.3", b: "3.3", diff: 2, msg: "Você se posiciona como líder público ético (1.3), mas ainda hesita diante de discriminações na equipe (3.3). Liderança ética se prova também — e sobretudo — nos momentos de conflito interno." },
+  // A alto (inclusão dos estudantes) + B baixo (segurança psicológica da equipe baixa) → inclusão sem base
   { a: "2.5", b: "3.2", diff: 2, msg: "Você articula inclusão para os estudantes (2.5), mas a segurança psicológica da equipe ainda precisa crescer (3.2). Construir inclusão real exige um ambiente adulto também seguro e colaborativo." },
 ];
 
@@ -240,41 +268,54 @@ function detectContradictions(answers) {
     const va = answers[rule.a] ?? -1;
     const vb = answers[rule.b] ?? -1;
     if (va < 0 || vb < 0) continue;
+    // DIRECIONAL: só dispara quando A está alto E B está baixo (va - vb >= diff)
     if (va - vb >= rule.diff) found.push(rule.msg);
   }
   return found;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CÁLCULOS — IMLE escala 1-4
+// CÁLCULOS
+// Armazenamento interno: 0-3 (índice do nível)
+// IMLE usa nivel_1a4 = raw + 1, escala 1-4
 // ═══════════════════════════════════════════════════════════════
 function calcResults(answers) {
   const dimScores = {};
   let totalW = 0, totalWV = 0;
+
   for (const c of COMPETENCIES) {
     const raw = answers[c.id];
     if (raw === undefined || raw === null) continue;
-    const nivel14 = raw + 1;
+    const nivel14 = raw + 1; // converte 0-3 para escala 1-4
     if (!dimScores[c.dimension]) dimScores[c.dimension] = { sumW: 0, sumWV: 0 };
     dimScores[c.dimension].sumW  += c.weight;
     dimScores[c.dimension].sumWV += nivel14 * c.weight;
     totalW  += c.weight;
     totalWV += nivel14 * c.weight;
   }
+
   const dims = {};
   for (const d of DIMENSIONS) {
     const s = dimScores[d];
     dims[d] = s ? s.sumWV / s.sumW : 0;
   }
-  return { dims, imle: totalW > 0 ? totalWV / totalW : 0 };
+
+  const imle = totalW > 0 ? totalWV / totalW : 0;
+  return { dims, imle };
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SUBMIT — text/plain;charset=utf-8 evita preflight CORS
+// SUBMIT
+// token enviado no body (compatível com no-cors — headers customizados
+// causariam preflight e quebrariam o envio via GitHub Pages)
 // ═══════════════════════════════════════════════════════════════
 async function submitToSheets(payload) {
-  const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+  // mode: "no-cors" resolve redirecionamento CORS do Google Apps Script via GitHub Pages.
+  // Resposta será opaca (ilegível), mas o dado chega na planilha.
+  // Validação real: checar nova linha na aba "respostas".
+  await fetch(CONFIG.APPS_SCRIPT_URL, {
     method: "POST",
+    mode: "no-cors",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({
       token:                     CONFIG.APP_TOKEN,
@@ -300,10 +341,7 @@ async function submitToSheets(payload) {
       answers:                   payload.answers_json,
     }),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = JSON.parse(await res.text());
-  if (json.ok === false) throw new Error(json.error || "Erro no servidor");
-  return json;
+  // Com no-cors a resposta é opaca — sucesso = fetch não lançou erro de rede
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -311,13 +349,14 @@ async function submitToSheets(payload) {
 // ═══════════════════════════════════════════════════════════════
 function RadarChart({ dims }) {
   const cx = 120, cy = 115, r = 85;
-  const angles = [-90, 30, 150];
-  const toRad  = (deg) => (deg * Math.PI) / 180;
+  const angles  = [-90, 30, 150]; // P1 topo, P2 inf-dir, P3 inf-esq
+  const toRad   = (deg) => (deg * Math.PI) / 180;
+  const maxVal  = 4;
 
   const points = DIMENSIONS.map((d, i) => {
     const angle = toRad(angles[i]);
     const val   = dims[d] || 0;
-    const ratio = val / 4;
+    const ratio = val / maxVal;
     return {
       x: cx + r * ratio * Math.cos(angle),
       y: cy + r * ratio * Math.sin(angle),
@@ -327,14 +366,15 @@ function RadarChart({ dims }) {
     };
   });
 
-  const polyPts = points.map((p) => `${p.x},${p.y}`).join(" ");
+  const polyPts   = points.map((p) => `${p.x},${p.y}`).join(" ");
+  const gridLevels = [1, 2, 3, 4];
 
   return (
     <svg viewBox="0 0 240 230" style={{ width: "100%", maxWidth: 280, display: "block", margin: "0 auto" }}>
-      {[1,2,3,4].map((lv) => {
+      {gridLevels.map((lv) => {
         const gPts = DIMENSIONS.map((_, i) => {
           const angle = toRad(angles[i]);
-          const ratio = lv / 4;
+          const ratio = lv / maxVal;
           return `${cx + r * ratio * Math.cos(angle)},${cy + r * ratio * Math.sin(angle)}`;
         }).join(" ");
         return <polygon key={lv} points={gPts} fill="none" stroke="#ddd9d4" strokeWidth="1" />;
@@ -355,7 +395,7 @@ function RadarChart({ dims }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ESTILOS
+// ESTILOS COMPARTILHADOS
 // ═══════════════════════════════════════════════════════════════
 const S = {
   wrap:     { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "24px 16px 48px" },
@@ -375,6 +415,7 @@ const S = {
 
 // ═══════════════════════════════════════════════════════════════
 // BANNER DE ENVIO PENDENTE
+// FIX 2: verifica localStorage ao carregar e oferece reenvio
 // ═══════════════════════════════════════════════════════════════
 function PendingBanner({ onDismiss }) {
   const [status, setStatus] = useState("idle");
@@ -426,6 +467,7 @@ function PendingBanner({ onDismiss }) {
 function WelcomeScreen({ onStart }) {
   const [form, setForm] = useState({ nome: "", email: "", escola: "", rede: "", tipo: "AUTO" });
   const [err,  setErr]  = useState("");
+
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const handleStart = () => {
@@ -446,32 +488,45 @@ function WelcomeScreen({ onStart }) {
           <h1 style={S.h1}>Bússola do Gestor</h1>
           <p style={{ ...S.sub, marginBottom: 0 }}>Autoavaliação de competências da Matriz 7 Ps</p>
         </div>
+
         <div style={{ borderTop: "1px solid #f0ede8", margin: "20px 0" }} />
+
         <div style={S.infoBox("#fdf9f4", "#e8dfd0")}>
-          <p style={{ fontSize: 13, color: "#6a6560", lineHeight: 1.65, margin: 0 }}>
-            <strong style={{ color: "#5a5550" }}>O que é:</strong> Uma ferramenta formativa baseada na Matriz de Competências de Gestores Escolares (v5.2) do Instituto Salto, cobrindo Propósito, Pedagogia e Pessoas.<br /><br />
-            <strong style={{ color: "#5a5550" }}>Para que serve:</strong> Ajudar você a identificar onde está, escolher uma área de foco e, se quiser, oferecer sua experiência como mentor(a) de colegas.<br /><br />
-            <strong style={{ color: "#5a5550" }}>Honestidade importa:</strong> Não há resposta certa. Quanto mais honesto(a) você for, mais útil será o resultado.
+          <p style={{ fontSize: 13, color: "#6a6560", lineHeight: 1.75, margin: 0 }}>
+            <strong style={{ color: "#5a5550" }}>O que é isso?</strong><br />
+            A Bússola do Gestor é uma ferramenta pessoal de desenvolvimento — não é uma avaliação, uma prova ou um ranking. Ela foi construída com base na Matriz de Competências de Gestores Escolares do Instituto Salto para te ajudar a enxergar com clareza onde você está hoje e onde quer chegar.<br /><br />
+            <strong style={{ color: "#5a5550" }}>Como funciona?</strong><br />
+            Você vai ler descrições de prática real e escolher aquela que melhor representa o que você <em>de fato</em> faz — não o que gostaria de fazer ou o que acha que deveria fazer. Ao final, você escolhe uma competência para desenvolver e pode se oferecer como mentor(a) de colegas em algo que já domina (uma atividade voluntária com duração de 3 a 6 horas por mês e certificação).<br /><br />
+            <strong style={{ color: "#5a5550" }}>Por que a honestidade importa?</strong><br />
+            Quanto mais fiel ao que você realmente vive na escola, mais útil será o resultado. Ninguém vai ver sua resposta para te julgar. Isso é para você.
           </p>
         </div>
+
         <div style={{ borderTop: "1px solid #f0ede8", margin: "20px 0 16px" }} />
+
         <label style={S.label}>Nome completo *</label>
         <input style={S.input} placeholder="Seu nome" value={form.nome} onChange={set("nome")} />
+
         <label style={S.label}>E-mail institucional *</label>
         <input style={S.input} type="email" placeholder="seu@email.com.br" value={form.email} onChange={set("email")} />
+
         <label style={S.label}>Escola *</label>
         <input style={S.input} placeholder="Nome da escola" value={form.escola} onChange={set("escola")} />
+
         <label style={S.label}>Rede / Município *</label>
         <input style={S.input} placeholder="Ex.: Porto Alegre/RS" value={form.rede} onChange={set("rede")} />
+
         <label style={S.label}>Tipo de avaliação</label>
         <select style={S.input} value={form.tipo} onChange={set("tipo")}>
           <option value="AUTO">Autoavaliação</option>
           <option value="360">Avaliação 360 (por pares/supervisão)</option>
         </select>
+
         {err && <p style={{ color: "#c44", fontSize: 13, marginBottom: 10 }}>{err}</p>}
+
         <button style={S.btn} onClick={handleStart}>Começar a avaliação →</button>
         <p style={{ fontSize: 12, color: "#b0aba6", textAlign: "center", marginTop: 14 }}>
-          14 competências · ~10 minutos · seus dados ficam seguros
+          14 competências · ~10 minutos · suas respostas serão usadas exclusivamente para fins formativos no programa
         </p>
       </div>
     </div>
@@ -484,6 +539,7 @@ function WelcomeScreen({ onStart }) {
 function QuestionScreen({ onFinish }) {
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState({});
+
   const comp     = COMPETENCIES[current];
   const shuffled = useMemo(() => shuffle([0, 1, 2, 3]), [comp.id]);
   const progress = ((current + 1) / COMPETENCIES.length) * 100;
@@ -509,9 +565,11 @@ function QuestionScreen({ onFinish }) {
             <div style={{ width: `${progress}%`, height: "100%", background: DIM_COLORS[comp.dimension], transition: "width 0.4s ease", borderRadius: 6 }} />
           </div>
         </div>
+
         <div style={S.tag(DIM_COLORS[comp.dimension])}>{comp.dimension} · {comp.dimensionName}</div>
         <h2 style={{ ...S.h2, marginBottom: 6 }}>{comp.name}</h2>
         <p style={{ fontSize: 13, color: "#b0aba6", marginBottom: 20 }}>Escolha o descritor que melhor representa sua prática atual.</p>
+
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {shuffled.map((lvlIdx) => {
             const isSelected = answers[comp.id] === lvlIdx;
@@ -523,14 +581,12 @@ function QuestionScreen({ onFinish }) {
                 background: isSelected ? DIM_COLORS[comp.dimension] + "11" : "#fff",
                 transition: "all 0.15s",
               }}>
-                <span style={{ fontWeight: 700, fontSize: 12, color: DIM_COLORS[comp.dimension], flexShrink: 0, marginTop: 2, minWidth: 18 }}>
-                  {lvlIdx + 1}
-                </span>
                 <span style={{ fontSize: 14, color: "#4a4540", lineHeight: 1.6 }}>{comp.levels[lvlIdx]}</span>
               </button>
             );
           })}
         </div>
+
         {current > 0 && (
           <button style={S.btnGhost} onClick={() => setCurrent(current - 1)}>← Voltar</button>
         )}
@@ -543,9 +599,9 @@ function QuestionScreen({ onFinish }) {
 // TELA DE RESULTADOS
 // ═══════════════════════════════════════════════════════════════
 function ResultsScreen({ answers, userData, onDecide }) {
-  const { dims, imle } = useMemo(() => calcResults(answers), [answers]);
-  const contradictions = useMemo(() => detectContradictions(answers), [answers]);
-  const interpretation = getImleInterpretation(imle);
+  const { dims, imle }  = useMemo(() => calcResults(answers), [answers]);
+  const contradictions  = useMemo(() => detectContradictions(answers), [answers]);
+  const interpretation  = getImleInterpretation(imle);
 
   return (
     <div style={S.wrap} className="fade-in">
@@ -555,6 +611,8 @@ function ResultsScreen({ answers, userData, onDecide }) {
           <h2 style={S.h2}>Seu resultado</h2>
           <p style={{ fontSize: 13, color: "#8a8580" }}>{userData.nome} · {userData.escola}</p>
         </div>
+
+        {/* IMLE */}
         <div style={{ ...S.infoBox("#fdf9f4", "#e8dfd0"), textAlign: "center", marginBottom: 16 }}>
           <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#c4955a", marginBottom: 4 }}>
             IMLE — Índice de Maturidade de Liderança Escolar
@@ -563,7 +621,11 @@ function ResultsScreen({ answers, userData, onDecide }) {
             {imle.toFixed(1)}{" "}
             <span style={{ fontSize: 18, color: "#b0aba6", fontFamily: "'DM Sans', sans-serif", fontWeight: 400 }}>/ 4,0</span>
           </div>
-          {CONFIG.SHOW_IMLE_BANDS && <div style={{ marginTop: 6 }}><span style={S.tag("#c4955a")}>{interpretation.label}</span></div>}
+          {CONFIG.SHOW_IMLE_BANDS && (
+            <div style={{ marginTop: 6 }}>
+              <span style={S.tag("#c4955a")}>{interpretation.label}</span>
+            </div>
+          )}
           <p style={{ fontSize: 13, color: "#6a6560", marginTop: 8, lineHeight: 1.55 }}>
             {CONFIG.SHOW_IMLE_BANDS ? interpretation.desc
               : imle >= 3.3 ? "Você está num patamar avançado de liderança. Há espaço para se tornar referência sistêmica."
@@ -572,7 +634,13 @@ function ResultsScreen({ answers, userData, onDecide }) {
               : "Você está nas etapas iniciais dessas competências — um bom ponto de partida para um plano de desenvolvimento focado."}
           </p>
         </div>
-        <div style={{ marginBottom: 16 }}><RadarChart dims={dims} /></div>
+
+        {/* Radar */}
+        <div style={{ marginBottom: 16 }}>
+          <RadarChart dims={dims} />
+        </div>
+
+        {/* Barras por dimensão */}
         {DIMENSIONS.map((d) => {
           const comps = COMPETENCIES.filter((c) => c.dimension === d);
           return (
@@ -598,6 +666,8 @@ function ResultsScreen({ answers, userData, onDecide }) {
             </div>
           );
         })}
+
+        {/* Contradições */}
         {contradictions.length > 0 && (
           <div style={{ marginTop: 8 }}>
             <p style={{ fontSize: 13, fontWeight: 700, color: "#b07a3a", marginBottom: 8 }}>💡 Pontos para reflexão</p>
@@ -608,6 +678,7 @@ function ResultsScreen({ answers, userData, onDecide }) {
             ))}
           </div>
         )}
+
         <button style={{ ...S.btn, marginTop: 20 }} onClick={onDecide}>Escolher minha competência-foco →</button>
       </div>
     </div>
@@ -623,12 +694,31 @@ function DecisionScreen({ answers, userData, results, onConfirm }) {
   const [mentorComp, setMentorComp] = useState(null);
   const [err,        setErr]        = useState("");
 
-  const lowComps  = COMPETENCIES.filter((c) => (answers[c.id] ?? -1) <= 1);
+  // Ordenação: nível mais baixo primeiro; dentro do mesmo nível, fundantes (weight 3) sobem.
+  // Fallback gradual: expande para o próximo nível até ter 3 competências.
+  const focusComps = useMemo(() => {
+    const sorted = [...COMPETENCIES].sort((a, b) => {
+      const la = answers[a.id] ?? 0;
+      const lb = answers[b.id] ?? 0;
+      if (la !== lb) return la - lb;               // menor nível primeiro
+      return b.weight - a.weight;                  // fundantes (weight 3) sobem
+    });
+    const minLevel = sorted[0] ? (answers[sorted[0].id] ?? 0) : 0;
+    let result = [];
+    let level = minLevel;
+    while (result.length < 3 && level <= 3) {
+      const atLevel = sorted.filter(c => (answers[c.id] ?? 0) === level);
+      result = [...result, ...atLevel];
+      level++;
+    }
+    return result.slice(0, 3);
+  }, [answers]);
+
   const highComps = COMPETENCIES.filter((c) => (answers[c.id] ?? -1) >= 2);
 
   const handleConfirm = () => {
-    if (!focus)                { setErr("Escolha uma competência-foco para continuar."); return; }
-    if (mentor === null)       { setErr("Indique se deseja ser mentor(a)."); return; }
+    if (!focus)             { setErr("Escolha uma competência-foco para continuar."); return; }
+    if (mentor === null)    { setErr("Indique se deseja ser mentor(a)."); return; }
     if (mentor && !mentorComp) { setErr("Escolha a competência em que você vai oferecer mentoria."); return; }
     setErr("");
     onConfirm({
@@ -644,13 +734,18 @@ function DecisionScreen({ answers, userData, results, onConfirm }) {
       <div style={S.card}>
         <h2 style={S.h2}>Suas decisões de desenvolvimento</h2>
         <p style={S.sub}>Com base no que você respondeu, defina seu próximo passo.</p>
+
+        {/* Competência foco */}
         <div style={{ marginBottom: 24 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: "#2d2926", marginBottom: 4 }}>Qual competência você quer desenvolver primeiro? *</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "#2d2926", marginBottom: 4 }}>
+            Qual competência você quer desenvolver primeiro? *
+          </p>
           <p style={{ fontSize: 13, color: "#8a8580", marginBottom: 12 }}>
-            {lowComps.length > 0 ? "Mostramos as competências onde há mais espaço de crescimento." : "Você está bem em todas — escolha onde quer aprofundar ainda mais."}
+            As competências abaixo estão na ordem em que acreditamos que deveriam ser priorizadas,
+            considerando seu perfil. As marcadas com ★ são fundantes — estruturam as demais.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {(lowComps.length > 0 ? lowComps : COMPETENCIES).map((c) => (
+            {focusComps.map((c) => (
               <button key={c.id} onClick={() => setFocus(c.id)} style={{
                 display: "flex", gap: 10, alignItems: "center", textAlign: "left",
                 padding: "12px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
@@ -660,15 +755,20 @@ function DecisionScreen({ answers, userData, results, onConfirm }) {
               }}>
                 <span style={{ ...S.tag(DIM_COLORS[c.dimension]), margin: 0, flexShrink: 0 }}>{c.id}</span>
                 <span style={{ fontSize: 13, color: "#4a4540", lineHeight: 1.5 }}>
+                  {c.weight === 3 && <span style={{ color: "#c4955a", marginRight: 4 }}>★</span>}
                   {c.name} <span style={{ color: "#b0aba6", marginLeft: 4 }}>({LEVEL_LABELS[answers[c.id] ?? 0]})</span>
                 </span>
               </button>
             ))}
           </div>
         </div>
+
+        {/* Mentoria */}
         <div style={{ marginBottom: 24 }}>
           <p style={{ fontSize: 14, fontWeight: 600, color: "#2d2926", marginBottom: 4 }}>Você quer se candidatar a mentor(a)? *</p>
-          <p style={{ fontSize: 13, color: "#8a8580", marginBottom: 12 }}>Gestores com nível Avançado ou Referência em alguma competência podem apoiar colegas.</p>
+          <p style={{ fontSize: 13, color: "#8a8580", marginBottom: 12 }}>
+            Gestores com nível Avançado ou Referência em alguma competência podem apoiar colegas.
+          </p>
           <div style={{ display: "flex", gap: 10 }}>
             {["Sim", "Não"].map((opt) => {
               const val = opt === "Sim";
@@ -680,10 +780,13 @@ function DecisionScreen({ answers, userData, results, onConfirm }) {
                   background: mentor === val ? "#c4955a11" : "#fff",
                   color: mentor === val ? "#c4955a" : "#6a6560",
                   transition: "all 0.15s",
-                }}>{opt}</button>
+                }}>
+                  {opt}
+                </button>
               );
             })}
           </div>
+
           {mentor === true && (
             <div style={{ marginTop: 14 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: "#5a5550", marginBottom: 8 }}>Em qual competência você vai oferecer mentoria? *</p>
@@ -706,6 +809,7 @@ function DecisionScreen({ answers, userData, results, onConfirm }) {
             </div>
           )}
         </div>
+
         {err && <p style={{ color: "#c44", fontSize: 13, marginBottom: 10 }}>{err}</p>}
         <button style={S.btn} onClick={handleConfirm}>Confirmar e enviar →</button>
       </div>
@@ -718,31 +822,32 @@ function DecisionScreen({ answers, userData, results, onConfirm }) {
 // ═══════════════════════════════════════════════════════════════
 function ConfirmationScreen({ userData, answers, results, decisions }) {
   const { imle, dims } = results;
-  const [status,  setStatus] = useState("idle");
-  const [errMsg,  setErrMsg] = useState("");
+  const [status,  setStatus]  = useState("idle");
+  const [errMsg,  setErrMsg]  = useState("");
   const submittedRef = useRef(false);
 
+  // FIX 2: ciclo_projeto + alinhamento de nomes de campos com o Apps Script
   const buildPayload = () => ({
-    submission_id:             generateSubmissionId(),
-    app_version:               CONFIG.APP_VERSION,
-    ciclo_projeto:             CONFIG.CICLO_PROJETO,
-    nome:                      userData.nome,
-    email:                     normalizeEmail(userData.email),
-    escola:                    userData.escola,
-    rede:                      userData.rede,
-    tipo_avaliacao:            userData.tipo,
-    data_avaliacao:            new Date().toISOString().slice(0, 10),
-    media_P1:                  parseFloat(dims.P1.toFixed(2)),
-    media_P2:                  parseFloat(dims.P2.toFixed(2)),
-    media_P3:                  parseFloat(dims.P3.toFixed(2)),
-    IMLE:                      parseFloat(imle.toFixed(2)),
-    competencia_foco:          decisions.focus,
-    quer_ser_mentor:           decisions.mentor,
-    competencia_mentoria:      decisions.mentorComp || "",
-    link_competencia_foco:     decisions.linkFocus,
+    submission_id:           generateSubmissionId(),
+    app_version:             CONFIG.APP_VERSION,
+    ciclo_projeto:           CONFIG.CICLO_PROJETO,
+    nome:                    userData.nome,
+    email:                   normalizeEmail(userData.email),
+    escola:                  userData.escola,
+    rede:                    userData.rede,
+    tipo_avaliacao:          userData.tipo,
+    data_avaliacao:          new Date().toISOString().slice(0, 10),
+    media_P1:                parseFloat(dims.P1.toFixed(2)),
+    media_P2:                parseFloat(dims.P2.toFixed(2)),
+    media_P3:                parseFloat(dims.P3.toFixed(2)),
+    IMLE:                    parseFloat(imle.toFixed(2)),
+    competencia_foco:        decisions.focus,
+    quer_ser_mentor:         decisions.mentor,
+    competencia_mentoria:    decisions.mentorComp || "",
+    link_competencia_foco:   decisions.linkFocus,
     link_competencia_mentoria: decisions.linkMentor,
-    link_portfolio:            decisions.linkPortfolio,
-    answers_json:              JSON.stringify(answers),
+    link_portfolio:          decisions.linkPortfolio,
+    answers_json:            JSON.stringify(answers),
   });
 
   const doSubmit = async () => {
@@ -775,6 +880,8 @@ function ConfirmationScreen({ userData, answers, results, decisions }) {
             {status === "success" ? "Enviado com sucesso!" : status === "error" ? "Erro no envio" : status === "sending" ? "Enviando…" : "Resumo da sua avaliação"}
           </h2>
         </div>
+
+        {/* Resumo */}
         <div style={S.infoBox("#f5f8ff", "#d0daf0")}>
           <p style={{ fontSize: 13, color: "#4a4560", lineHeight: 1.7, margin: 0 }}>
             <strong>IMLE:</strong> {imle.toFixed(1)} / 4,0<br />
@@ -784,23 +891,29 @@ function ConfirmationScreen({ userData, answers, results, decisions }) {
             <strong>Ciclo:</strong> {CONFIG.CICLO_PROJETO} · <strong>Tipo:</strong> {userData.tipo === "AUTO" ? "Autoavaliação" : "Avaliação 360"}
           </p>
         </div>
+
+        {/* Links de desenvolvimento */}
         <div style={{ marginTop: 16, marginBottom: 8 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "#5a5550", marginBottom: 10 }}>Seus materiais de desenvolvimento:</p>
           <a href={decisions.linkFocus} target="_blank" rel="noreferrer" style={{
             display: "block", padding: "12px 16px", borderRadius: 10, background: "#c4955a", color: "#fff",
             textDecoration: "none", fontSize: 13, fontWeight: 600, marginBottom: 8, textAlign: "center",
           }}>📘 Unidade digital: Competência {decisions.focus}</a>
+
           {decisions.mentor && decisions.mentorComp && (
             <a href={decisions.linkMentor} target="_blank" rel="noreferrer" style={{
               display: "block", padding: "12px 16px", borderRadius: 10, background: "#6dab8c", color: "#fff",
               textDecoration: "none", fontSize: 13, fontWeight: 600, marginBottom: 8, textAlign: "center",
             }}>🤝 Competência de mentoria: {decisions.mentorComp}</a>
           )}
+
           <a href={decisions.linkPortfolio} target="_blank" rel="noreferrer" style={{
             display: "block", padding: "12px 16px", borderRadius: 10, border: "1.5px solid #e0ddd8",
             color: "#5a7ec4", textDecoration: "none", fontSize: 13, fontWeight: 600, textAlign: "center",
           }}>🗂️ Meu portfólio digital</a>
         </div>
+
+        {/* Botão de envio */}
         {status === "idle" && (
           <button style={{ ...S.btn, marginTop: 12 }} onClick={doSubmit}>Confirmar e registrar minha avaliação</button>
         )}
@@ -829,13 +942,14 @@ function ConfirmationScreen({ userData, answers, results, decisions }) {
 
 // ═══════════════════════════════════════════════════════════════
 // APP PRINCIPAL
+// FIX 2: verifica pending_submission ao inicializar
 // ═══════════════════════════════════════════════════════════════
 function App() {
-  const [screen,      setScreen]      = useState("welcome");
-  const [userData,    setUserData]    = useState(null);
-  const [answers,     setAnswers]     = useState({});
-  const [results,     setResults]     = useState(null);
-  const [decisions,   setDecisions]   = useState(null);
+  const [screen,    setScreen]    = useState("welcome");
+  const [userData,  setUserData]  = useState(null);
+  const [answers,   setAnswers]   = useState({});
+  const [results,   setResults]   = useState(null);
+  const [decisions, setDecisions] = useState(null);
   const [showPending, setShowPending] = useState(false);
 
   useEffect(() => {
@@ -843,7 +957,13 @@ function App() {
   }, []);
 
   const handleStart = (form) => { setUserData(form); setScreen("questions"); };
-  const handleFinishQuestions = (ans) => { setAnswers(ans); setResults(calcResults(ans)); setScreen("results"); };
+
+  const handleFinishQuestions = (ans) => {
+    setAnswers(ans);
+    setResults(calcResults(ans));
+    setScreen("results");
+  };
+
   const handleDecide = (dec) => { setDecisions(dec); setScreen("confirmation"); };
 
   return (
